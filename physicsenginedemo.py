@@ -40,6 +40,77 @@ class Vector2:
         return "Vector2(x={}, y={})".format(self.x, self.y)
     def __neg__(self):
         return Vector2(-self.x, -self.y)
+        
+class CollisionHandler:
+	
+	def __init__(self, collision_list=[]):
+		
+		self.collision_list = collision_list
+		pairs = []
+		
+		self.assign_pairs()
+		
+		t.Thread(target=self.update_collisions).start()
+		
+	def assign_pairs(self):
+		
+		assigned_pairs = []
+		pairs = []
+		for i in self.collision_list:
+			for j in self.collision_list:
+				if i != j:
+					pairs.append([i, j])
+		#removing duplicates
+		to_remove = []
+		for i in pairs:
+			for j in pairs:
+				if i != j:
+					if j[0] in i and j[1] in i:
+						if i not in to_remove:
+							to_remove.append(j)
+							break
+						else:
+							break
+		for i in to_remove:
+			pairs.remove(i)
+		
+		self.unique_pairs = list(pairs)
+		
+	def update_collisions(self):
+		
+		global INITIATEEXIT
+		
+		lct = {}
+		for i in self.collision_list:
+			lct[i] = 0
+		
+		while not(INITIATEEXIT):
+			
+			s = time.time()
+			
+			for i in self.unique_pairs:
+				p1 = i[0]
+				p2 = i[1]
+				
+				r1 = p1.get_rect()
+				r2 = p2.get_rect()
+				
+				if r1.colliderect(r2):
+					if p1.collision_data != id(p2) or lct[p1] >= 0.2:
+						p1.net_force, p2.net_force = p2.net_force, p1.net_force
+						p1.collision_data = id(p2)
+						p2.collision_data = id(p1)
+						lct[p1] = 0
+						lct[p2] = 0
+					#p1.net_force, p2.net_force = p2.net_force, p1.net_force
+			
+			for i in lct:
+				lct[i] += 1/120
+				
+			e = time.time()
+			
+			if e-s < 1/120:
+				time.sleep(1/120 - (e-s))
 
 class PhysicsParticle:
 
@@ -57,7 +128,7 @@ class PhysicsParticle:
         self.is_pawn = self.kwargs["pawn"]
 
         self.net_force = Vector2()
-        self.collision_list = []
+        self.velocity = Vector2()
         self.collision_data = 0
         
         t.Thread(target=self.update_physics).start()
@@ -137,21 +208,8 @@ class PhysicsParticle:
                         self.y += velocity_y
                     else:
                         self.y += inertial_y
-            for i in self.collision_list:
-                if i != self:
-                    self_rect = self.get_rect()
-                    other_rect = i.get_rect()
-                    if self_rect.colliderect(other_rect):
-                        if self.collision_data != id(i):
-                            self.collision_data, i.collision_data = 0, 0
-                            self.net_force, i.net_force = i.net_force, self.net_force
-                            i.collision_data = id(self)
-                            self.collision_data = id(i)
-                            time_since_last_collision = 0
-                        elif time_since_last_collision > 0.5 and self.collision_data == id(i):
-                            self.net_force, i.net_force = i.net_force, self.net_force
-                            time_since_last_collision = 0
-            time_since_last_collision += 1/60
+                        
+            self.velocity = Vector2(velocity_x, velocity_y)
             ends_at = time.time()
             net_time_taken = ends_at - starts_at
             if net_time_taken < 1/60:
@@ -166,10 +224,12 @@ class PhysicsParticle:
 main = pygame.display.set_mode((600, 600))
 
 physics_objects = [PhysicsParticle(pawn=True, pos=(500, 100), color=(255, 0, 0))]
-for i in range(10):
+for i in range(30):
     physics_objects.append(PhysicsParticle(pos=(i + i*20, 100), mass=randint(3, 5)))
 for i in physics_objects:
     i.collision_list = physics_objects
+    
+CollisionHandler(physics_objects)
 
 while True:
 
