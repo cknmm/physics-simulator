@@ -1,8 +1,12 @@
 import pygame
 from pygame.locals import *
 import threading as t
-import time, sys
+import time, sys, random
 from random import randint
+
+pygame.mixer.pre_init(44100, -16, 2, 2048)
+pygame.mixer.init()
+pygame.init()
 
 INITIATEEXIT = False
 
@@ -39,6 +43,109 @@ class Vector2:
         return "Vector2(x={}, y={})".format(self.x, self.y)
     def __neg__(self):
         return Vector2(-self.x, -self.y)
+    
+
+class Rectangle_fx:
+    
+    def __init__(self, emerge_from=(0, 0)):
+        
+        self.emerge_from = emerge_from
+        
+        self.particles = []
+        
+        self.ended = False
+        
+        self.create_particles()
+        
+        t.Thread(target=self.animate_particles).start()
+        
+    def create_particles(self):
+        
+        ex, ey = self.emerge_from
+        
+        for i in range(1, 11):
+            
+            while True:
+                
+                r = pygame.Rect(ex + random.randint(0, 15), ey + random.choice([-1, 1])*random.randint(0, 15), 4, 4)
+                
+                for i in self.particles:
+                    if i.colliderect(r):
+                        break
+                else:
+                    self.particles.append(r)
+                    break
+                
+        for i in range(11, 21):
+            
+            while True:
+                
+                r = pygame.Rect(ex - random.randint(0, 15), ey - random.choice([-1, 1])*random.randint(0, 15), 4, 4)
+                
+                for i in self.particles:
+                    if i.colliderect(r):
+                        break
+                else:
+                    self.particles.append(r)
+                    break
+                
+        for i in range(1, 11):
+            
+            while True:
+                
+                r = pygame.Rect(ex + random.choice([-1, 1])*random.randint(0, 15), ey + random.randint(0, 15), 4, 4)
+                
+                for i in self.particles[21:]:
+                    if i.colliderect(r):
+                        break
+                else:
+                    self.particles.append(r)
+                    break
+                
+        for i in range(11, 21):
+            
+            while True:
+                
+                r = pygame.Rect(ex + random.choice([-1, 1])*random.randint(0, 15), ey - random.randint(0, 15), 4, 4)
+                
+                for i in self.particles[21:]:
+                    if i.colliderect(r):
+                        break
+                else:
+                    self.particles.append(r)
+                    break
+        
+    def animate_particles(self):
+        
+        global INITIATEEXIT
+        
+        ref = 0
+        ex, ey = self.emerge_from
+        
+        while ref < 6 and not(INITIATEEXIT):
+            
+            for i in self.particles[0:21]:
+                if i.x < ex:
+                    i.x -= 1
+                else:
+                    i.x += 1
+            for i in self.particles[21:41]:
+                if i.y < ey:
+                    i.y -= 1
+                else:
+                    i.y += 1
+                    
+            ref += 1
+            time.sleep(1/60)
+        
+        else:
+            self.ended = True
+            
+    def draw(self, dis):
+        
+        for i in self.particles:
+                pygame.draw.rect(dis, (0, random.randint(0, 255), random.randint(128, 255), 255), i)
+                
         
 class CollisionHandler:
     
@@ -75,9 +182,13 @@ class CollisionHandler:
         
         self.unique_pairs = list(pairs)
         
+    def play_sound(self):
+        
+        pygame.mixer.Sound.play(pygame.mixer.Sound("./soundoncollide.OGG"))
+        
     def update_collisions(self):
         
-        global INITIATEEXIT
+        global INITIATEEXIT, active_fx
         
         lct = {}
         for i in self.collision_list:
@@ -100,7 +211,17 @@ class CollisionHandler:
                         total_mass = p1.mass + p2.mass
                         v1 = p1.velocity*((p1.mass - p2.mass)/total_mass) + p2.velocity*(2*p2.mass/total_mass)
                         v2 = p2.velocity*((p2.mass - p1.mass)/total_mass) + p1.velocity*(2*p1.mass/total_mass)
-                        p1.velocity, p2.velocity = v1*0.9, v2*0.9
+                        p1.velocity, p2.velocity = v1, v2
+                        
+                        #add a particle fx near to the collision site (center of the line segment joining the centers of colliding objects)
+                        c1, c2 = r1.center, r2.center
+                        xc = (c1[0] + c2[0])/2
+                        yc = (c1[1] + c2[1])/2
+                        center = (xc, yc)
+                        active_fx.append(Rectangle_fx(center))
+                        
+                        #play a collision sound
+                        t.Thread(target=self.play_sound).start()
                         
                         p1.collision_data = id(p2)
                         p2.collision_data = id(p1)
@@ -128,6 +249,8 @@ class PhysicsParticle:
         self.color = self.kwargs["color"]
         self.mass = self.kwargs["mass"]
         self.static = self.kwargs["static"]
+        if self.static:
+            self.mass = float("inf")
         self.is_pawn = self.kwargs["pawn"]
 
         self.net_force = Vector2()
@@ -151,7 +274,7 @@ class PhysicsParticle:
         if "mass" not in keys:
             self.kwargs["mass"] = 1
         if "static" not in keys:
-            self.kwargs["static"] = ""
+            self.kwargs["static"] = False
         if "pawn" not in keys:
             self.kwargs["pawn"] = False
         if "collision_list" not in keys:
@@ -217,10 +340,10 @@ class PhysicsParticle:
             if self.velocity:
                 
                 if self.velocity.x:
-                    self.x += self.velocity.x
+                    self.x += self.velocity.x*(1/60)
                     
                 if self.velocity.y:
-                    self.y += self.velocity.y
+                    self.y += self.velocity.y*(1/60)
                         
             self.velocity += Vector2(velocity_x, velocity_y)
             ends_at = time.time()
@@ -235,10 +358,13 @@ class PhysicsParticle:
         pygame.draw.rect(display, self.color, self.get_rect())
 
 main = pygame.display.set_mode((600, 600))
+fx_surf = pygame.Surface((600, 600), pygame.SRCALPHA)
 
-physics_objects = [PhysicsParticle(pawn=True, pos=(500, 100), color=(255, 0, 0))]
-for i in range(25):
-    physics_objects.append(PhysicsParticle(pos=(i + i*20, 100), mass=randint(3, 5)))
+active_fx = []
+
+physics_objects = [PhysicsParticle(pawn=True, pos=(500, 540), color=(255, 0, 0))]
+for i in range(20):
+    physics_objects.append(PhysicsParticle(pos=(i + i*20, i*20 + i + 100), mass=randint(3, 5)))
 for i in physics_objects:
     i.collision_list = physics_objects
     
@@ -257,21 +383,26 @@ while True:
 
     if keys[pygame.K_r] or pygame.mouse.get_pressed()[0]:
         for i in physics_objects:
-            x, y = randint(-1, 1), randint(-1, 1)
+            x, y = randint(-100, 100), randint(-100, 100)
             i.apply_impulse(Vector2(x, y), 1)
 
     main.fill((0, 0, 0))
+    fx_surf.fill((0, 0, 0, 0))
 
     for i in physics_objects:
         i.draw(main)
-        """if i.x > 600:
-            i.x = 0
-        if i.y > 600:
-            i.y = 0
-        if i.x < 0:
-            i.x = 600
-        if i.y < 0:
-            i.y = 600"""
+        
+    to_remove_fx = []
+    for i in active_fx:
+        if i.ended:
+            to_remove_fx.append(i)
+        else:
+            i.draw(fx_surf)
+    for i in to_remove_fx:
+        del_obj = active_fx.pop(active_fx.index(i))
+        del del_obj
+    
+    main.blit(fx_surf, (0, 0))
 
     pygame.display.flip()
 
