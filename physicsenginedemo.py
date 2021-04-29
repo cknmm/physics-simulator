@@ -188,11 +188,13 @@ class CollisionHandler:
         
     def update_collisions(self):
         
-        global INITIATEEXIT, active_fx
+        global INITIATEEXIT, active_fx, collision_ready
         
         lct = {}
         for i in self.collision_list:
             lct[i] = 0
+
+        collision_ready = True
         
         while not(INITIATEEXIT):
             
@@ -206,7 +208,7 @@ class CollisionHandler:
                 r2 = p2.get_rect()
                 
                 if r1.colliderect(r2):
-                    if p1.collision_data != id(p2) or lct[p1] >= 0.2:
+                    if p1.collision_data != id(p2) or lct[p1] >= 0.5:
                         #velocity exchange as per law of conservation of momentum
                         total_mass = p1.mass + p2.mass
                         v1 = p1.velocity*((p1.mass - p2.mass)/total_mass) + p2.velocity*(2*p2.mass/total_mass)
@@ -367,8 +369,16 @@ for i in range(20):
     physics_objects.append(PhysicsParticle(pos=(i + i*20, i*20 + i + 100), mass=randint(3, 5)))
 for i in physics_objects:
     i.collision_list = physics_objects
-    
+
+collision_ready = False  
 CollisionHandler(physics_objects)
+
+#click message
+font = pygame.font.Font('freesansbold.ttf', 16)
+text_to_display = font.render('Click to apply random impulses to particles', True, (0, 255, 0, 128))
+tr = text_to_display.get_rect()
+tr.x, tr.y = 10, 10
+text_surface = pygame.Surface((500, 500), pygame.SRCALPHA)
 
 while True:
 
@@ -381,13 +391,19 @@ while True:
 
     keys = pygame.key.get_pressed()
 
-    if keys[pygame.K_r] or pygame.mouse.get_pressed()[0]:
-        for i in physics_objects:
-            x, y = randint(-100, 100), randint(-100, 100)
-            i.apply_impulse(Vector2(x, y), 1)
+    if collision_ready:
+        if keys[pygame.K_r] or pygame.mouse.get_pressed()[0]:
+            for i in physics_objects:
+                x, y = randint(-100, 100), randint(-100, 100)
+                i.apply_impulse(Vector2(x, y), 1)
+        
 
     main.fill((0, 0, 0))
     fx_surf.fill((0, 0, 0, 0))
+    text_surface.fill((0, 0, 0, 0))
+
+    if collision_ready:
+        text_surface.blit(text_to_display, tr)
 
     for i in physics_objects:
         i.draw(main)
@@ -403,6 +419,7 @@ while True:
         del del_obj
     
     main.blit(fx_surf, (0, 0))
+    main.blit(text_surface, (0, 0))
 
     pygame.display.flip()
 
